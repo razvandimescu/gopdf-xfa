@@ -259,23 +259,29 @@ func postProcessFixes(xml []byte) []byte {
 	// (cont = account), "rd." (rând = row), and "din ct." (from account).
 	// Applied AFTER labels so it catches both freshly-translated and any
 	// untranslated text that still contains these tokens.
+	// Ordered longest-match-first. "din ct." has to precede every bare "ct."
+	// rule: the space inside it matches " ct." first, which strands the
+	// Romanian "din" in front of an already-translated "acc." and leaves the
+	// rule below unreachable. The prefixes are the delimiters a token can
+	// follow — "(" and " " in prose, ">" at the start of an element body
+	// (`<span>rd. 191…</span>`), and "+,-" inside formulas.
 	abbrevs := []fix{
 		{find: []byte("(din ct."), replace: []byte("(from acc.")},
 		{find: []byte(" din ct."), replace: []byte(" from acc.")},
+		{find: []byte(">din ct."), replace: []byte(">from acc.")},
+
 		{find: []byte("(ct."), replace: []byte("(acc.")},
 		{find: []byte(" ct."), replace: []byte(" acc.")},
-		{find: []byte("(rd."), replace: []byte("(row ")},
-		{find: []byte(" rd."), replace: []byte(" row ")},
-		// At the start of an element body (right after `>` of opening tag),
-		// e.g. `<span>rd. 191…</span>`. Also handles `>ct.` and `>din ct.`.
-		{find: []byte(">rd."), replace: []byte(">row ")},
 		{find: []byte(">ct."), replace: []byte(">acc.")},
-		{find: []byte(">din ct."), replace: []byte(">from acc.")},
-		// Inside formulas: "+ct.", ",ct.", "-ct." (without leading space).
 		{find: []byte("+ct."), replace: []byte("+acc.")},
 		{find: []byte(",ct."), replace: []byte(",acc.")},
 		{find: []byte("-ct."), replace: []byte("-acc.")},
 	}
+	// "rd." expands to a word, not an abbreviation, so the replacement has to
+	// supply the space the period was carrying — and swallow the one already
+	// there, or "rd. 191" comes out as "row  191". One expression covers the
+	// same three delimiters the byte rules above enumerate.
+	reRd := regexp.MustCompile(`([(> ])rd\.\s*`)
 	// `row N la M` (Romanian "la" = "to") — only translate when both sides
 	// are digits so we don't accidentally rewrite English text containing
 	// the word "la".
@@ -291,6 +297,7 @@ func postProcessFixes(xml []byte) []byte {
 		for _, a := range abbrevs {
 			chunk = bytes.ReplaceAll(chunk, a.find, a.replace)
 		}
+		chunk = reRd.ReplaceAll(chunk, []byte("${1}row "))
 		return reLa.ReplaceAll(chunk, []byte("$1 to $2"))
 	})
 }
