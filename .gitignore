@@ -1,0 +1,4 @@
+/gopdf-xfa
+*.pdf
+*.tsv
+.DS_Store
